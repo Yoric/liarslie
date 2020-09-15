@@ -1,0 +1,15 @@
+[package]
+name = "liars"
+version = "0.1.0"
+authors = ["David Teller <D.O.Teller@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = "*"
+rand = "*"
+serde = "*"
+serde_derive = "*"
+serde_json = "*"
+enum-ordinalize = "3.1.8"
