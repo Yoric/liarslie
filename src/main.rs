@@ -67,7 +67,29 @@ async fn main() {
                         .possible_value("false")
                         .required(true),
                 ),
+        )
+        .subcommand(
+            SubCommand::with_name("playexpert")
+                .about("Play a single round of 'guess the original value', only talking to some agents")
+                .arg(
+                    Arg::with_name("agents")
+                        .long("agents")
+                        .value_name("FILE")
+                        .default_value("agents.conf")
+                )
+                .arg(
+                    Arg::with_name("liar-ratio")
+                        .long("liar-ratio")
+                        .value_name("ratio")
+                        .default_value("0.1")
+                        .validator(|s| match s.parse::<f64>() {
+                            Err(e) => Err(format!("{}", e)),
+                            Ok(v) if 0. <= v && v < 0.5 => Ok(()),
+                            Ok(v) => Err(format!("Expected a value in [0., 0.5[, got {}", v)),
+                        }),
+                ),
         );
+
     match app.get_matches().subcommand() {
         ("start", Some(args)) => {
             let start_args = start::StartArgs {
@@ -110,6 +132,21 @@ async fn main() {
                     .expect("Invalud value: agents"),
             };
             play::play(&play_args).await;
+        }
+        ("playexpert", Some(args)) => {
+            let play_args = playexpert::PlayExpertArgs {
+                path: args
+                    .value_of("agents")
+                    .expect("Missing arg: agents")
+                    .parse::<std::path::PathBuf>()
+                    .expect("Invalud value: agents"),
+                liar_ratio: args
+                    .value_of("liar-ratio")
+                    .expect("Missing arg: value")
+                    .parse::<f64>()
+                    .expect("Invalud value: value"),
+            };
+            playexpert::play(&play_args).await;
         }
         _ => {
             panic!();

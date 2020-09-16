@@ -109,7 +109,41 @@ impl Agent {
                             value,
                             issuer: issuer.clone(),
                         }),
-                        _ => unimplemented!(),
+                        Message::Campaign(children) => {
+                            let (tcollect, mut rcollect) = tokio::sync::mpsc::channel(32);
+                            let collector = tokio::spawn(async move {
+                                let mut my_party = vec![];
+                                while let Some(certificate) = rcollect.recv().await {
+                                    my_party.push(certificate);
+                                }
+                                my_party
+                            });
+                            {
+                                // Make sure that `tcollect` is dropped after the async loop is over.
+                                let tcollect = tcollect;
+                                for child in children {
+                                    let mut tcollect = tcollect.clone();
+                                    // We could of course avoid calling ourself.
+                                    // Let's see this as a stress-test for concurrency/reentrancy issues!
+                                    let remote = RemoteAgent::new(child);
+                                    tokio::spawn(async move {
+                                        match remote.call(&Message::GetValue).await {
+                                            Ok(Response::Certificate(certificate)) => {
+                                                if certificate.value != value {
+                                                    // Remote agent disagrees with us, ignore it.
+                                                    return;
+                                                }
+                                                let _ = tcollect.send(certificate).await;
+                                            }
+                                            _ => {
+                                                // Remote agent can't or won't respond or bad response, skip it.
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                            Response::Quorum(collector.await.unwrap())
+                        }
                     };
                     let mut response = serde_json::to_string(&response).unwrap();
                     response.push('\n');
@@ -138,8 +172,7 @@ impl RemoteAgent {
             pid = self.conf.pid
         );
         // Acquire child.
-        let mut stream =
-            TcpStream::connect(format!("127.0.0.1:{}", self.conf.socket)).await?;
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.conf.socket)).await?;
 
         // Send request.
         eprintln!("Play: Sending request");
