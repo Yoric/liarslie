@@ -10,7 +10,7 @@ use liars::start::*;
 
 struct ProcessCleanup {
     conf: liars::conf::Conf,
-    processes: Vec<std::process::Child>
+    processes: Vec<tokio::process::Child>,
 }
 impl Drop for ProcessCleanup {
     fn drop(&mut self) {
@@ -29,13 +29,13 @@ fn test() {
 
 /// Test with a full quorum.
 async fn test_impl() {
-    for i in 0..100 {
+    for i in 0..1000 {
         eprintln!("Initializing test {}", i);
 
         // Start with processes.
         let value = rand::thread_rng().gen_bool(0.5);
         let liar_ratio = rand::thread_rng().gen_range(0.0, 0.5);
-        let num_agents = rand::thread_rng().gen_range(10, 30);
+        let num_agents = rand::thread_rng().gen_range(10, 50);
         let exe = std::path::PathBuf::from(env!("CARGO_BIN_EXE_liarslie"));
         let start_args = StartArgs {
             value,
@@ -45,21 +45,18 @@ async fn test_impl() {
         };
         // Cleanup processes on exit.
         let (conf, processes) = start(&start_args).await;
-        let _guard = ProcessCleanup {
-            conf,
-            processes
-        };
+        let _guard = ProcessCleanup { conf, processes };
         assert_eq!(_guard.processes.len(), num_agents);
 
         /*
-        // Test that `play` provides the right result.
-        eprintln!("...Testing play in this configuration");
-        let play_args = PlayArgs {
-            path: std::path::PathBuf::from("agents.conf"),
-        };
-        let result = liars::play::play(&play_args).await;
-        assert_eq!(result.expect("We should have a result"), value, "'play' should produce the right value");
-*/
+                // Test that `play` provides the right result.
+                eprintln!("...Testing play in this configuration");
+                let play_args = PlayArgs {
+                    path: std::path::PathBuf::from("agents.conf"),
+                };
+                let result = liars::play::play(&play_args).await;
+                assert_eq!(result.expect("We should have a result"), value, "'play' should produce the right value");
+        */
         // Test that `playexpert` provides the right result.
         eprintln!("...Testing playexpert in this configuration");
         let play_expert_args = PlayExpertArgs {
@@ -67,7 +64,11 @@ async fn test_impl() {
             liar_ratio,
         };
         let result = liars::playexpert::play(&play_expert_args).await;
-        assert_eq!(result.expect("We should have a result"), value, "'playexpert' should produce the right value");
+        assert_eq!(
+            result.expect("We should have a result"),
+            value,
+            "'playexpert' should produce the right value"
+        );
 
         // Close sockets
         for child in &_guard.conf.children {

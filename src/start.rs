@@ -14,9 +14,10 @@ pub struct StartArgs {
 /// Implementation of command `start`.
 ///
 /// Start `args.num_agents` processes with `args.liar_ratio` liars.
-pub async fn start(args: &StartArgs) -> (Conf, Vec<std::process::Child>) {
+pub async fn start(args: &StartArgs) -> (Conf, Vec<tokio::process::Child>) {
     use crate::rand::prelude::SliceRandom;
-    use std::io::{BufRead, BufReader, Write};
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use std::io::{Write};
     let num_liars = ((args.num_agents as f64) * args.liar_ratio) as usize;
     debug!(target: "start", "Preparing {} agents including {} liars",
         args.num_agents,
@@ -37,7 +38,7 @@ pub async fn start(args: &StartArgs) -> (Conf, Vec<std::process::Child>) {
     // Spawn agents.
     let mut processes = Vec::with_capacity(args.num_agents);
     for v in values {
-        let mut cmd = std::process::Command::new(&args.exe);
+        let mut cmd = tokio::process::Command::new(&args.exe);
         let child = cmd
             .arg("agent")
             .arg("--value")
@@ -60,6 +61,7 @@ pub async fn start(args: &StartArgs) -> (Conf, Vec<std::process::Child>) {
         let mut received = String::new();
         reader
             .read_line(&mut received)
+            .await
             .expect("Could not communicate with child process");
         let socket = received[0..received.len() - 1]
             .parse::<u16>()

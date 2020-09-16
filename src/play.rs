@@ -39,7 +39,7 @@ pub async fn play(args: &PlayArgs) -> Option<bool> {
                     break;
                 }
             }
-            debug!(target: "play", 
+            debug!(target: "play",
                 "Collector: yeas {}, nays {}, we should continue",
                 yeas, nays
             );
@@ -84,7 +84,7 @@ pub async fn play(args: &PlayArgs) -> Option<bool> {
     for task in tasks.into_iter() {
         task.await.unwrap();
     }
-    let result =collector.await.unwrap();
+    let result = collector.await.unwrap();
     match result {
         Some(true) => debug!(target: "play", "The value was 'true'"),
         Some(false) => debug!(target: "play", "The value was 'false'"),

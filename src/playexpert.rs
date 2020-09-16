@@ -89,7 +89,7 @@ pub async fn play(args: &PlayExpertArgs) -> Option<bool> {
     for task in tasks.into_iter() {
         task.await.unwrap();
     }
-    let result =collector.await.unwrap();
+    let result = collector.await.unwrap();
     match result {
         Some(true) => debug!(target: "playexpert", "The value was 'true'"),
         Some(false) => debug!(target: "playexpert", "The value was 'false'"),

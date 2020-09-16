@@ -3,9 +3,9 @@ extern crate env_logger;
 use rand::Rng;
 
 use liars::agent;
-use liars::start;
 use liars::play;
 use liars::playexpert;
+use liars::start;
 
 #[tokio::main]
 async fn main() {

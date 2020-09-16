@@ -137,33 +137,30 @@ impl Agent {
                                     // We could of course avoid calling ourself.
                                     // Let's see this as a stress-test for concurrency/reentrancy issues!
                                     let remote = RemoteAgent::new(child);
-                                    tokio::spawn(async move {
-                                        match remote.call(&Message::GetValue).await {
-                                            Ok(Response::Certificate(certificate)) => {
-                                                if certificate.value != value {
-                                                    // Remote agent disagrees with us, ignore it.
-                                                    debug!(target: "campaign", "{} Process {} thinks that value is {}, ignoring it",
+                                    match remote.call(&Message::GetValue).await {
+                                        Ok(Response::Certificate(certificate)) => {
+                                            if certificate.value != value {
+                                                // Remote agent disagrees with us, ignore it.
+                                                debug!(target: "campaign", "{} Process {} thinks that value is {}, ignoring it",
                                                         issuer.pid,
                                                         certificate.issuer.pid,
                                                         certificate.value);
-                                                } else {
-                                                    debug!(target: "campaign", "{} Process {} agrees that value is {}, using it",
+                                            } else {
+                                                debug!(target: "campaign", "{} Process {} agrees that value is {}, using it",
                                                         issuer.pid,
                                                         certificate.issuer.pid,
                                                         certificate.value);
-                                                    tcollect.send(certificate).await
-                                                        .unwrap();
-                                                }
-                                            }
-                                            Err(err) => {
-                                                warn!(target: "campaign", "Couldn't communiccate {:?}", err);
-                                            }
-                                            message => {
-                                                // Remote agent can't or won't respond or bad response, skip it.
-                                                warn!(target: "campaign", "Received a message that doesn't make sense {:?}", message);
+                                                tcollect.send(certificate).await.unwrap();
                                             }
                                         }
-                                    });
+                                        Err(err) => {
+                                            warn!(target: "campaign", "Couldn't communiccate {:?}", err);
+                                        }
+                                        message => {
+                                            // Remote agent can't or won't respond or bad response, skip it.
+                                            warn!(target: "campaign", "Received a message that doesn't make sense {:?}", message);
+                                        }
+                                    }
                                 }
                             }
                             let party = collector.await.unwrap();
@@ -190,6 +187,8 @@ impl Agent {
     }
 }
 
+pub const MAX_RETRIES: usize = 10;
+
 /// An agent running in another process.
 pub struct RemoteAgent {
     conf: Child,
@@ -199,27 +198,39 @@ impl RemoteAgent {
         RemoteAgent { conf }
     }
     pub async fn call(&self, message: &Message) -> Result<Response, std::io::Error> {
-        debug!(target: "agent", 
+        debug!(target: "agent",
             "Play: Connecting with child {pid} on port {port}",
             port = self.conf.socket,
             pid = self.conf.pid
         );
-        // Acquire child.
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.conf.socket)).await?;
+        let mut error = None;
+        for i in 0..MAX_RETRIES {
+            // Acquire child.
+            let mut stream = match TcpStream::connect(format!("127.0.0.1:{}", self.conf.socket)).await {
+                Ok(stream) => stream,
+                Err(err) => {
+                    error = Some(err);
+                    debug!(target: "agent", "Play: Could not connect, sleeping a bit");
+                    tokio::time::delay_for(std::time::Duration::new(i as u64, 0)).await;
+                    continue;
+                }
+            };
 
-        // Send request.
-        debug!(target: "agent", "Play: Sending request");
-        let mut buffer = serde_json::to_string(message).unwrap();
-        buffer.push('\n');
-        stream.write_all(buffer.as_bytes()).await?;
-        stream.flush().await?;
+            // Send request.
+            debug!(target: "agent", "Play: Sending request");
+            let mut buffer = serde_json::to_string(message).unwrap();
+            buffer.push('\n');
+            stream.write_all(buffer.as_bytes()).await?;
+            stream.flush().await?;
 
-        // Wait for response.
-        debug!(target: "agent", "Play: Waiting for response");
-        let mut reader = BufReader::new(stream);
-        let mut line = String::new();
-        reader.read_line(&mut line).await?;
-        Ok(serde_json::from_str(&line)?)
+            // Wait for response.
+            debug!(target: "agent", "Play: Waiting for response");
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).await?;
+            return Ok(serde_json::from_str(&line)?)
+        }
+        Err(error.unwrap())
     }
 }
 
