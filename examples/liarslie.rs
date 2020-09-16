@@ -1,16 +1,9 @@
-extern crate clap;
-extern crate rand;
-extern crate serde;
-extern crate serde_derive;
-extern crate tokio;
-
 use rand::Rng;
 
-mod agent;
-mod conf;
-mod play;
-mod playexpert;
-mod start;
+use liars::agent;
+use liars::start;
+use liars::play;
+use liars::playexpert;
 
 #[tokio::main]
 async fn main() {
@@ -107,6 +100,7 @@ async fn main() {
                     .expect("Missing arg: value")
                     .parse::<f64>()
                     .expect("Invalud value: value"),
+                exe: std::env::current_exe().expect("Could not get executable"),
             };
             assert!(start_args.liar_ratio >= 0.);
             assert!(start_args.liar_ratio < 0.5);
@@ -149,7 +143,7 @@ async fn main() {
             playexpert::play(&play_args).await;
         }
         _ => {
-            panic!();
+            panic!("Missing command");
         }
     }
 }

@@ -1,6 +1,9 @@
+use std::path::PathBuf;
+
 use crate::conf::*;
 
 pub struct StartArgs {
+    pub exe: PathBuf,
     pub value: bool,
     pub num_agents: usize,
     pub liar_ratio: f64,
@@ -9,7 +12,7 @@ pub struct StartArgs {
 /// Implementation of command `start`.
 ///
 /// Start `args.num_agents` processes with `args.liar_ratio` liars.
-pub async fn start(args: &StartArgs) {
+pub async fn start(args: &StartArgs) -> Vec<std::process::Child> {
     use crate::rand::prelude::SliceRandom;
     use std::io::{BufRead, BufReader, Write};
     let num_liars = ((args.num_agents as f64) * args.liar_ratio) as usize;
@@ -27,10 +30,9 @@ pub async fn start(args: &StartArgs) {
     values.shuffle(&mut rand::thread_rng());
 
     // Spawn agents.
-    let exe = std::env::current_exe().expect("Could not get executable");
     let mut processes = Vec::with_capacity(args.num_agents);
     for v in values {
-        let mut cmd = std::process::Command::new(&exe);
+        let mut cmd = std::process::Command::new(&args.exe);
         let child = cmd
             .arg("agent")
             .arg("--value")
@@ -44,7 +46,7 @@ pub async fn start(args: &StartArgs) {
 
     // Wait to know their socket. We're in no hurry here, so let's do it sequentially.
     let mut children = Vec::with_capacity(args.num_agents);
-    for mut proc in processes {
+    for proc in &mut processes {
         let stdout = proc
             .stdout
             .as_mut()
@@ -69,12 +71,12 @@ pub async fn start(args: &StartArgs) {
     );
 
     // Write `agents.conf`
-    {
-        let config = Conf { children };
-        let serialized = serde_json::to_string_pretty(&config).unwrap();
-        let mut file = std::fs::File::create("agents.conf").expect("Cannot create agents.conf");
-        write!(file, "{}", serialized).expect("Cannot write agents.conf");
-    }
+    let config = Conf { children };
+    let serialized = serde_json::to_string_pretty(&config).unwrap();
+    let mut file = std::fs::File::create("agents.conf").expect("Cannot create agents.conf");
+    write!(file, "{}", serialized).expect("Cannot write agents.conf");
 
     eprintln!("Ready");
+
+    processes
 }
