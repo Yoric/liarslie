@@ -8,11 +8,31 @@ use serde_json;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Message {
+    /// Get the value carried by this agent.
+    ///
+    /// Response is `Response::Certificate(Certificate)`.
     GetValue,
+
+    /// Request a list of allies for this agent.
+    ///
+    /// Response is `Response::Quorum(...)`.
+    Campaign(Vec<Child>),
 }
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Response {
-    Value(bool),
+    Certificate(Certificate),
+    Quorum(Vec<Certificate>),
+}
+
+/// Representation of an unforgeable response.
+///
+/// In an actual implementation, this could either be
+/// - backed by cryptography; or
+/// - backed by double-checking with the agent that they have issued this response.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Certificate {
+    pub value: bool,
+    pub issuer: Child,
 }
 
 /// An agent running in this process
@@ -35,6 +55,11 @@ impl Agent {
 
     /// Enter the loop, forever.
     pub async fn exec(&mut self) {
+        let value = self.value;
+        let issuer = Child {
+            socket: self.socket().port(),
+            pid: std::process::id(),
+        };
         loop {
             // Wait for a connection.
             eprintln!(
@@ -47,7 +72,7 @@ impl Agent {
                 .await
                 .expect("Could not accept connection");
 
-            let value = self.value;
+            let issuer = issuer.clone();
             tokio::spawn(async move {
                 // Process requests.
                 let mut reader = BufReader::new(&mut conn);
@@ -78,9 +103,13 @@ impl Agent {
 
                     eprintln!("Agent: message is correct, preparing response");
 
-                    // And respond
+                    // And respond.
                     let response = match message {
-                        Message::GetValue => Response::Value(value),
+                        Message::GetValue => Response::Certificate(Certificate {
+                            value,
+                            issuer: issuer.clone(),
+                        }),
+                        _ => unimplemented!(),
                     };
                     let mut response = serde_json::to_string(&response).unwrap();
                     response.push('\n');
