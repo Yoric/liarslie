@@ -1,8 +1,8 @@
 extern crate clap;
-extern crate enum_ordinalize;
 extern crate rand;
 extern crate serde;
 extern crate serde_derive;
+extern crate tokio;
 
 use rand::Rng;
 
@@ -12,7 +12,8 @@ mod play;
 mod playexpert;
 mod start;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     use clap::{ Arg, SubCommand };
     let app = clap::App::new("Liars lie")
         .subcommand(SubCommand::with_name("start")
@@ -83,7 +84,7 @@ fn main() {
                 };
             assert!(start_args.liar_ratio >= 0.);
             assert!(start_args.liar_ratio < 0.5);
-            start::start(&start_args);
+            start::start(&start_args).await;
         },
         ("agent", Some(args)) => {
             let agent_args = agent::AgentArgs {
@@ -95,7 +96,7 @@ fn main() {
                         v => panic!("Invalid boolean {}", v)
                     },
             };
-            agent::agent(&agent_args);
+            agent::agent(&agent_args).await;
             unreachable!();
         },
         ("play", Some(args)) => {
@@ -105,7 +106,7 @@ fn main() {
                     .parse::<std::path::PathBuf>()
                     .expect("Invalud value: agents"),
             };
-            play::play(&play_args);
+            play::play(&play_args).await;
         },
         _ => {
             panic!();

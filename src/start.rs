@@ -9,7 +9,7 @@ pub struct StartArgs {
 /// Implementation of command `start`.
 ///
 /// Start `args.num_agents` processes with `args.liar_ratio` liars.
-pub fn start(args: &StartArgs) {
+pub async fn start(args: &StartArgs) {
     use crate::rand::prelude::SliceRandom;
     use std::io::{ BufRead, BufReader, Write };
     let num_liars = ((args.num_agents as f64) * args.liar_ratio) as usize;
