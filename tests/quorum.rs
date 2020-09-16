@@ -32,21 +32,21 @@ async fn test_impl() {
         impl Drop for ProcessCleanup {
             fn drop(&mut self) {
                 for child in &mut self.0 {
-                    let _ = child.kill();
+                    let _ = child.kill().unwrap();
                 }
                 let _ = std::fs::remove_file("agents.conf");
             }
         }
-        start(&start_args).await;
+        let _guard = ProcessCleanup(start(&start_args).await);
 
-        // Test that `play` works.
+        // Test that `play` provides the right result.
         let play_args = PlayArgs {
             path: std::path::PathBuf::from("agents.conf"),
         };
         let result = liars::play::play(&play_args).await;
         assert_eq!(result.expect("We should have a result"), value, "'play' should produce the right value");
 
-        // Test that `playexpert` works.
+        // Test that `playexpert` provides the right result.
         let play_expert_args = PlayExpertArgs {
             path: std::path::PathBuf::from("agents.conf"),
             liar_ratio,
