@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use log::*;
+
 use crate::conf::*;
 
 pub struct StartArgs {
@@ -40,7 +42,7 @@ pub async fn start(args: &StartArgs) -> Vec<std::process::Child> {
             .stdout(std::process::Stdio::piped())
             .spawn()
             .expect("Could not spawn process");
-        eprintln!("Launching command {:?}", cmd);
+        debug!(target: "start", "Launching command {:?}", cmd);
         processes.push(child);
     }
 
@@ -65,7 +67,7 @@ pub async fn start(args: &StartArgs) -> Vec<std::process::Child> {
         });
     }
 
-    eprintln!(
+    debug!(target: "start", 
         "Value is {}, spawned {} processes, {} of which are lying.\n{:?}",
         args.value, args.num_agents, num_liars, children
     );
@@ -76,7 +78,7 @@ pub async fn start(args: &StartArgs) -> Vec<std::process::Child> {
     let mut file = std::fs::File::create("agents.conf").expect("Cannot create agents.conf");
     write!(file, "{}", serialized).expect("Cannot write agents.conf");
 
-    eprintln!("Ready");
+    debug!(target: "start", "Ready");
 
     processes
 }

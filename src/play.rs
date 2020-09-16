@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use log::*;
+
 use crate::agent;
 use crate::conf::*;
 
@@ -19,9 +21,9 @@ pub async fn play(args: &PlayArgs) -> Option<bool> {
         let mut yeas = 0usize;
         let mut nays = 0usize;
         let mut result = None;
-        eprintln!("Collector: Starting");
+        debug!(target: "collector", "Starting");
         while let Some(msg) = rcollect.recv().await {
-            eprintln!("Collector: Treating {}", msg);
+            debug!(target: "collector", "Treating {}", msg);
             if msg {
                 yeas += 1;
                 if yeas >= number_of_children / 2 {
@@ -37,12 +39,12 @@ pub async fn play(args: &PlayArgs) -> Option<bool> {
                     break;
                 }
             }
-            eprintln!(
+            debug!(target: "play", 
                 "Collector: yeas {}, nays {}, we should continue",
                 yeas, nays
             );
         }
-        eprintln!("Collector: Done");
+        debug!(target: "collector", "Done");
         return result;
     });
 
@@ -56,19 +58,19 @@ pub async fn play(args: &PlayArgs) -> Option<bool> {
             tokio::spawn(async move {
                 match remote.call(&agent::Message::GetValue).await {
                     Ok(agent::Response::Certificate(agent::Certificate { value, .. })) => {
-                        eprintln!("Play: Received value {} from remote agent", value);
+                        debug!(target: "play", "Play: Received value {} from remote agent", value);
                         // Ignore errors: the collector may have finished already.
                         let _ = tcollect.send(value).await;
                     }
                     Ok(other) => {
-                        eprintln!("Bad response from child {pid} on port {port}: {response:?}",
+                        debug!(target: "play", "Bad response from child {pid} on port {port}: {response:?}",
                             pid = child.pid,
                             port = child.socket,
                             response = other
                         );
                     }
                     Err(error) => {
-                        eprintln!("Could not communicate with child {pid} on port {port}: {error:?}, skipping child.",
+                        debug!(target: "play", "Could not communicate with child {pid} on port {port}: {error:?}, skipping child.",
                             pid = child.pid,
                             port = child.socket,
                             error = error
@@ -84,9 +86,9 @@ pub async fn play(args: &PlayArgs) -> Option<bool> {
     }
     let result =collector.await.unwrap();
     match result {
-        Some(true) => eprintln!("The value was 'true'"),
-        Some(false) => eprintln!("The value was 'false'"),
-        None => eprintln!("Not enough participants to determine value"),
+        Some(true) => debug!(target: "play", "The value was 'true'"),
+        Some(false) => debug!(target: "play", "The value was 'false'"),
+        None => debug!(target: "play", "Not enough participants to determine value"),
     };
     result
 }

@@ -1,6 +1,7 @@
 use std::iter::Iterator;
 use std::path::PathBuf;
 
+use log::*;
 use rand::seq::SliceRandom;
 
 use crate::agent;
@@ -20,7 +21,7 @@ pub async fn play(args: &PlayExpertArgs) -> Option<bool> {
 
     // Collect responses.
     let collector = tokio::spawn(async move {
-        eprintln!("Collector: Starting");
+        debug!(target: "collector", "Starting");
         while let Some(party) = rcollect.recv().await {
             if party.len() < number_of_children / 2 {
                 // The party is too small to be a quorum, ignore..
@@ -32,15 +33,15 @@ pub async fn play(args: &PlayExpertArgs) -> Option<bool> {
             let (yeas, nays): (Vec<_>, Vec<_>) =
                 party.into_iter().partition(|certificate| certificate.value);
             if yeas.len() >= number_of_children / 2 {
-                eprintln!("Collector: got {} voters for yea that's a quorum", yeas.len());
+                debug!(target: "collector", "got {} voters for yea that's a quorum", yeas.len());
                 return Some(true);
             }
             if nays.len() >= number_of_children / 2 {
-                eprintln!("Collector: got {} voters for nay that's a quorum", nays.len());
+                debug!(target: "collector", "got {} voters for nay that's a quorum", nays.len());
                 return Some(false);
             }
         }
-        eprintln!("Collector: Done");
+        debug!(target: "collector", "Done");
         None
     });
 
@@ -65,14 +66,14 @@ pub async fn play(args: &PlayExpertArgs) -> Option<bool> {
                         let _ = tcollect.send(party).await;
                     }
                     Ok(other) => {
-                        eprintln!("Bad response from child {pid} on port {port}: {response:?}",
+                        debug!(target: "playexpert", "Bad response from child {pid} on port {port}: {response:?}",
                             pid = child.pid,
                             port = child.socket,
                             response = other
                         );
                     }
                     Err(error) => {
-                        eprintln!("Could not communicate with child {pid} on port {port}: {error:?}, skipping child.",
+                        debug!(target: "playexpert", "Could not communicate with child {pid} on port {port}: {error:?}, skipping child.",
                             pid = child.pid,
                             port = child.socket,
                             error = error
@@ -88,9 +89,9 @@ pub async fn play(args: &PlayExpertArgs) -> Option<bool> {
     }
     let result =collector.await.unwrap();
     match result {
-        Some(true) => eprintln!("The value was 'true'"),
-        Some(false) => eprintln!("The value was 'false'"),
-        None => eprintln!("Not enough participants to determine value"),
+        Some(true) => debug!(target: "playexpert", "The value was 'true'"),
+        Some(false) => debug!(target: "playexpert", "The value was 'false'"),
+        None => debug!(target: "playexpert", "Not enough participants to determine value"),
     };
     result
 }

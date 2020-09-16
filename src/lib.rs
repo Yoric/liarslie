@@ -1,4 +1,5 @@
 extern crate clap;
+extern crate log;
 extern crate rand;
 extern crate serde;
 extern crate serde_derive;

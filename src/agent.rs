@@ -1,4 +1,6 @@
 use std::net::SocketAddr;
+
+use log::*;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -62,7 +64,7 @@ impl Agent {
         };
         loop {
             // Wait for a connection.
-            eprintln!(
+            debug!(target: "agent", 
                 "Agent: waiting for connection on port {}",
                 self.socket().port()
             );
@@ -77,31 +79,31 @@ impl Agent {
                 // Process requests.
                 let mut reader = BufReader::new(&mut conn);
                 'lines: loop {
-                    eprintln!("Agent: received connection");
+                    debug!(target: "agent", "received connection");
                     // Receive message.
                     let mut line = String::new();
                     let line = match reader.read_line(&mut line).await {
                         Ok(0) => {
-                            eprintln!("Agent: connection closed by remote host");
+                            debug!(target: "agent", "connection closed by remote host");
                             break 'lines;
                         }
                         Ok(_) => line,
                         Err(err) => {
-                            eprintln!("Could not read, closing connection {:?}.", err);
+                            debug!(target: "agent", "Could not read, closing connection {:?}.", err);
                             break 'lines;
                         }
                     };
 
-                    eprintln!("Agent: received message '{}'", line);
+                    debug!(target: "agent", "received message '{}'", line);
                     let message = match serde_json::from_str(&line) {
                         Err(err) => {
-                            eprintln!("Invalid message, closing connection {:?}.", err);
+                            debug!(target: "agent", "Invalid message, closing connection {:?}.", err);
                             break 'lines;
                         }
                         Ok(msg) => msg,
                     };
 
-                    eprintln!("Agent: message is correct, preparing response");
+                    debug!(target: "agent", "message is correct, preparing response");
 
                     // And respond.
                     let response = match message {
@@ -148,7 +150,7 @@ impl Agent {
                     let mut response = serde_json::to_string(&response).unwrap();
                     response.push('\n');
                     if let Err(err) = reader.get_mut().write_all(response.as_bytes()).await {
-                        eprintln!("Could not respond, closing connection {:?}.", err);
+                        debug!(target: "agent", "Could not respond, closing connection {:?}.", err);
                         break 'lines;
                     }
                 }
@@ -166,7 +168,7 @@ impl RemoteAgent {
         RemoteAgent { conf }
     }
     pub async fn call(&self, message: &Message) -> Result<Response, std::io::Error> {
-        eprintln!(
+        debug!(target: "agent", 
             "Play: Connecting with child {pid} on port {port}",
             port = self.conf.socket,
             pid = self.conf.pid
@@ -175,14 +177,14 @@ impl RemoteAgent {
         let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.conf.socket)).await?;
 
         // Send request.
-        eprintln!("Play: Sending request");
+        debug!(target: "agent", "Play: Sending request");
         let mut buffer = serde_json::to_string(message).unwrap();
         buffer.push('\n');
         stream.write_all(buffer.as_bytes()).await?;
         stream.flush().await?;
 
         // Wait for response.
-        eprintln!("Play: Waiting for response");
+        debug!(target: "agent", "Play: Waiting for response");
         let mut reader = BufReader::new(stream);
         let mut line = String::new();
         reader.read_line(&mut line).await?;

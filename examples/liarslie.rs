@@ -1,3 +1,5 @@
+extern crate env_logger;
+
 use rand::Rng;
 
 use liars::agent;
@@ -7,6 +9,7 @@ use liars::playexpert;
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     use clap::{Arg, SubCommand};
     let app = clap::App::new("Liars lie")
         .subcommand(
