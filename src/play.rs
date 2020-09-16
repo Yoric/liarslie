@@ -1,8 +1,6 @@
-use std::io::{ Read, Write };
+use std::io::{ BufRead, BufReader, Read, Write };
 use std::net::TcpStream;
 use std::path::PathBuf;
-
-use enum_ordinalize::Ordinalize;
 
 use crate::agent;
 use crate::conf::*;
@@ -13,7 +11,7 @@ pub struct PlayArgs {
 
 pub fn play(args: &PlayArgs) {
     // Attempt to parse configuration.
-    let mut file = std::fs::File::open(&args.path)
+    let file = std::fs::File::open(&args.path)
         .expect("Could not open file");
     let conf : Conf = serde_json::from_reader(&file)
         .expect("Could not read file");
@@ -23,43 +21,50 @@ pub fn play(args: &PlayArgs) {
     let mut yeas = 0usize;
     let mut nays = 0usize;
     let mut result = None;
-    for child in &conf.children {
-        eprintln!("Connecting with child {pid} on port {port}",
+    let comm = |child: &Child| -> Result<bool, std::io::Error> {
+        eprintln!("Play: Connecting with child {pid} on port {port}",
             port = child.socket,
             pid = child.pid);
         // Acquire child.
-        let mut stream = match TcpStream::connect(std::net::SocketAddr::from(([127, 0, 0, 1], child.socket))) {
-            Err(err) => {
-                // In case the process is dead, attempt to continue with remaining children.
-                eprintln!("Could not connect with child process {pid} on port {port}: {err:?}",
-                    port = child.socket,
-                    pid = child.pid,
-                    err = err);
-                    continue;
-            }
-            Ok(stream) => stream
-        };
+        let mut stream = TcpStream::connect(std::net::SocketAddr::from(([127, 0, 0, 1], child.socket)))?;
 
-        // Send message.
-        stream.write_all(&mut [agent::Message::GetValue.ordinal()])
-            .expect("Could not send request to agent");
+        // Adopt arbitrary timeouts.
+        stream.set_write_timeout(Some(std::time::Duration::new(5, 0)))
+            .unwrap();
+        stream.set_read_timeout(Some(std::time::Duration::new(5, 0)))
+            .unwrap();
+
+        // Send request.
+        eprintln!("Play: Sending request");
+        serde_json::to_writer(&mut stream, &agent::Message::GetValue)?;
+        stream.write_all(b"\n")?;
+        stream.flush()?;
 
         // Wait for response.
-        // At this stage, we expect that the child will respond promptly, even if that's
-        // not necessarily realistic.
-        let mut response = [255];
-        stream.read_exact(&mut response)
-            .expect("Could not receive value from agent");
+        eprintln!("Play: Waiting for response");
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        match serde_json::from_str(&line)? {
+            agent::Response::Value(v) => Ok(v)
+        }
+    };
 
-        let claim = match response[0] {
-            0 => false,
-            1 => true,
-            other => panic!("Unexpected response {}", other)
-        };
-        if claim {
-            yeas += 1;
-        } else {
-            nays += 1;
+    for child in &conf.children {
+        match comm(child) {
+            Ok(true) => {
+                yeas += 1;
+            }
+            Ok(false) => {
+                nays += 1;
+            }
+            Err(error) => {
+                eprintln!("Could not communicate with child {pid} on port {port}: {error:?}, skipping child.",
+                    pid = child.pid,
+                    port = child.socket,
+                    error = error
+                );
+            }
         }
 
         if yeas >= conf.children.len() / 2 {

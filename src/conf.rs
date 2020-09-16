@@ -1,6 +1,6 @@
 use serde_derive::{Serialize, Deserialize};
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Child {
     pub pid: u32,
     pub socket: u16,

@@ -9,6 +9,7 @@ use rand::Rng;
 mod agent;
 mod conf;
 mod play;
+mod playexpert;
 mod start;
 
 fn main() {
