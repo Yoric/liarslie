@@ -14,10 +14,13 @@ pub struct StartArgs {
 /// Implementation of command `start`.
 ///
 /// Start `args.num_agents` processes with `args.liar_ratio` liars.
-pub async fn start(args: &StartArgs) -> Vec<std::process::Child> {
+pub async fn start(args: &StartArgs) -> (Conf, Vec<std::process::Child>) {
     use crate::rand::prelude::SliceRandom;
     use std::io::{BufRead, BufReader, Write};
     let num_liars = ((args.num_agents as f64) * args.liar_ratio) as usize;
+    debug!(target: "start", "Preparing {} agents including {} liars",
+        args.num_agents,
+        num_liars);
 
     // Initialize the values we're about to distribute among agents.
     // Initially, everybody is a reliable.
@@ -67,7 +70,7 @@ pub async fn start(args: &StartArgs) -> Vec<std::process::Child> {
         });
     }
 
-    debug!(target: "start", 
+    debug!(target: "start",
         "Value is {}, spawned {} processes, {} of which are lying.\n{:?}",
         args.value, args.num_agents, num_liars, children
     );
@@ -80,5 +83,5 @@ pub async fn start(args: &StartArgs) -> Vec<std::process::Child> {
 
     debug!(target: "start", "Ready");
 
-    processes
+    (config, processes)
 }

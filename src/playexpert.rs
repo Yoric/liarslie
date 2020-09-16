@@ -21,10 +21,12 @@ pub async fn play(args: &PlayExpertArgs) -> Option<bool> {
 
     // Collect responses.
     let collector = tokio::spawn(async move {
-        debug!(target: "collector", "Starting");
+        debug!(target: "playexpert", "Starting");
         while let Some(party) = rcollect.recv().await {
+            debug!(target: "playexpert", "Received a party of {} certificates (from {} processes)", party.len(), number_of_children);
             if party.len() < number_of_children / 2 {
-                // The party is too small to be a quorum, ignore..
+                // The party is too small to be a quorum, ignore.
+                debug!(target: "playexpert", "Party is too small to be a quorum");
                 continue;
             }
             // Let's check that the quorum *is* a quorum.
@@ -32,16 +34,16 @@ pub async fn play(args: &PlayExpertArgs) -> Option<bool> {
             // and/or double-check with issuer.
             let (yeas, nays): (Vec<_>, Vec<_>) =
                 party.into_iter().partition(|certificate| certificate.value);
-            if yeas.len() >= number_of_children / 2 {
-                debug!(target: "collector", "got {} voters for yea that's a quorum", yeas.len());
+            if yeas.len() >= (number_of_children + 1) / 2 {
+                debug!(target: "playexpert", "got {} voters for yea that's a quorum", yeas.len());
                 return Some(true);
             }
-            if nays.len() >= number_of_children / 2 {
-                debug!(target: "collector", "got {} voters for nay that's a quorum", nays.len());
+            if nays.len() >= (number_of_children + 1) / 2 {
+                debug!(target: "playexpert", "got {} voters for nay that's a quorum", nays.len());
                 return Some(false);
             }
         }
-        debug!(target: "collector", "Done");
+        debug!(target: "playexpert", "Done");
         None
     });
 

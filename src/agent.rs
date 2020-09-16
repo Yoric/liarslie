@@ -10,6 +10,8 @@ use serde_json;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Message {
+    Stop,
+
     /// Get the value carried by this agent.
     ///
     /// Response is `Response::Certificate(Certificate)`.
@@ -22,6 +24,7 @@ pub enum Message {
 }
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Response {
+    Stop,
     Certificate(Certificate),
     Quorum(Vec<Certificate>),
 }
@@ -64,7 +67,7 @@ impl Agent {
         };
         loop {
             // Wait for a connection.
-            debug!(target: "agent", 
+            debug!(target: "agent",
                 "Agent: waiting for connection on port {}",
                 self.socket().port()
             );
@@ -76,6 +79,8 @@ impl Agent {
 
             let issuer = issuer.clone();
             tokio::spawn(async move {
+                let issuer = issuer;
+
                 // Process requests.
                 let mut reader = BufReader::new(&mut conn);
                 'lines: loop {
@@ -107,11 +112,13 @@ impl Agent {
 
                     // And respond.
                     let response = match message {
+                        Message::Stop => Response::Stop,
                         Message::GetValue => Response::Certificate(Certificate {
                             value,
                             issuer: issuer.clone(),
                         }),
                         Message::Campaign(children) => {
+                            debug!(target: "campaign", "{} I'm a process that thinks the value is {}", issuer.pid, value);
                             let (tcollect, mut rcollect) = tokio::sync::mpsc::channel(32);
                             let collector = tokio::spawn(async move {
                                 let mut my_party = vec![];
@@ -123,7 +130,9 @@ impl Agent {
                             {
                                 // Make sure that `tcollect` is dropped after the async loop is over.
                                 let tcollect = tcollect;
+                                debug!(target: "campaign", "{} Talking to {} agents", issuer.pid, children.len());
                                 for child in children {
+                                    let issuer = issuer.clone();
                                     let mut tcollect = tcollect.clone();
                                     // We could of course avoid calling ourself.
                                     // Let's see this as a stress-test for concurrency/reentrancy issues!
@@ -133,25 +142,47 @@ impl Agent {
                                             Ok(Response::Certificate(certificate)) => {
                                                 if certificate.value != value {
                                                     // Remote agent disagrees with us, ignore it.
-                                                    return;
+                                                    debug!(target: "campaign", "{} Process {} thinks that value is {}, ignoring it",
+                                                        issuer.pid,
+                                                        certificate.issuer.pid,
+                                                        certificate.value);
+                                                } else {
+                                                    debug!(target: "campaign", "{} Process {} agrees that value is {}, using it",
+                                                        issuer.pid,
+                                                        certificate.issuer.pid,
+                                                        certificate.value);
+                                                    tcollect.send(certificate).await
+                                                        .unwrap();
                                                 }
-                                                let _ = tcollect.send(certificate).await;
                                             }
-                                            _ => {
+                                            Err(err) => {
+                                                warn!(target: "campaign", "Couldn't communiccate {:?}", err);
+                                            }
+                                            message => {
                                                 // Remote agent can't or won't respond or bad response, skip it.
+                                                warn!(target: "campaign", "Received a message that doesn't make sense {:?}", message);
                                             }
                                         }
                                     });
                                 }
                             }
-                            Response::Quorum(collector.await.unwrap())
+                            let party = collector.await.unwrap();
+                            debug!(target: "campaign", "{} Process ready to send proof that {} agents agree on value {}",
+                                issuer.pid,
+                                party.len(),
+                                value
+                            );
+                            Response::Quorum(party)
                         }
                     };
-                    let mut response = serde_json::to_string(&response).unwrap();
-                    response.push('\n');
-                    if let Err(err) = reader.get_mut().write_all(response.as_bytes()).await {
+                    let mut serialized = serde_json::to_string(&response).unwrap();
+                    serialized.push('\n');
+                    if let Err(err) = reader.get_mut().write_all(serialized.as_bytes()).await {
                         debug!(target: "agent", "Could not respond, closing connection {:?}.", err);
                         break 'lines;
+                    }
+                    if let Response::Stop = response {
+                        return;
                     }
                 }
             });
@@ -201,5 +232,4 @@ pub async fn agent(args: &AgentArgs) {
     let mut agent = Agent::try_new(args.value).expect("Could not start agent");
     print!("{}\n", agent.socket().port());
     agent.exec().await;
-    unreachable!();
 }
