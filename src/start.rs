@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use log::*;
 
 use crate::conf::*;
+use crate::util;
 
 pub struct StartArgs {
     pub exe: PathBuf,
@@ -16,8 +17,8 @@ pub struct StartArgs {
 /// Start `args.num_agents` processes with `args.liar_ratio` liars.
 pub async fn start(args: &StartArgs) -> (Conf, Vec<tokio::process::Child>) {
     use crate::rand::prelude::SliceRandom;
+    use std::io::Write;
     use tokio::io::{AsyncBufReadExt, BufReader};
-    use std::io::{Write};
     let num_liars = ((args.num_agents as f64) * args.liar_ratio) as usize;
     debug!(target: "start", "Preparing {} agents including {} liars",
         args.num_agents,
@@ -39,14 +40,18 @@ pub async fn start(args: &StartArgs) -> (Conf, Vec<tokio::process::Child>) {
     let mut processes = Vec::with_capacity(args.num_agents);
     for v in values {
         let mut cmd = tokio::process::Command::new(&args.exe);
-        let child = cmd
-            .arg("agent")
+        cmd.arg("agent")
             .arg("--value")
             .arg(if v { "true" } else { "false" })
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .expect("Could not spawn process");
-        debug!(target: "start", "Launching command {:?}", cmd);
+            .stdout(std::process::Stdio::piped());
+
+        // We may need several attempts to spawn processes, if the machine is a bit stressed.
+        let child = util::retry_closure_if(
+            move || cmd.spawn(),
+            |err| err.kind() == std::io::ErrorKind::WouldBlock,
+        )
+        .await
+        .expect("Could not spawn process");
         processes.push(child);
     }
 

@@ -5,6 +5,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::conf::Child;
+use crate::util;
 use serde_derive::{Deserialize, Serialize};
 use serde_json;
 
@@ -47,12 +48,9 @@ pub struct Agent {
 }
 impl Agent {
     /// Create an agent, open a socket.
-    pub fn try_new(value: bool) -> Result<Self, std::io::Error> {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-        Ok(Agent {
-            value,
-            listener: TcpListener::from_std(listener).unwrap(),
-        })
+    pub async fn try_new(value: bool) -> Result<Self, std::io::Error> {
+        let listener = util::retry_future(|| tokio::net::TcpListener::bind("127.0.0.1:0")).await?;
+        Ok(Agent { value, listener })
     }
     pub fn socket(&self) -> SocketAddr {
         self.listener.local_addr().expect("No local address")
@@ -187,8 +185,6 @@ impl Agent {
     }
 }
 
-pub const MAX_RETRIES: usize = 10;
-
 /// An agent running in another process.
 pub struct RemoteAgent {
     conf: Child,
@@ -203,34 +199,23 @@ impl RemoteAgent {
             port = self.conf.socket,
             pid = self.conf.pid
         );
-        let mut error = None;
-        for i in 0..MAX_RETRIES {
-            // Acquire child.
-            let mut stream = match TcpStream::connect(format!("127.0.0.1:{}", self.conf.socket)).await {
-                Ok(stream) => stream,
-                Err(err) => {
-                    error = Some(err);
-                    debug!(target: "agent", "Play: Could not connect, sleeping a bit");
-                    tokio::time::delay_for(std::time::Duration::new(i as u64, 0)).await;
-                    continue;
-                }
-            };
+        let mut stream =
+            util::retry_future(|| TcpStream::connect(format!("127.0.0.1:{}", self.conf.socket)))
+                .await?;
 
-            // Send request.
-            debug!(target: "agent", "Play: Sending request");
-            let mut buffer = serde_json::to_string(message).unwrap();
-            buffer.push('\n');
-            stream.write_all(buffer.as_bytes()).await?;
-            stream.flush().await?;
+        // Send request.
+        debug!(target: "agent", "Play: Sending request");
+        let mut buffer = serde_json::to_string(message).unwrap();
+        buffer.push('\n');
+        stream.write_all(buffer.as_bytes()).await?;
+        stream.flush().await?;
 
-            // Wait for response.
-            debug!(target: "agent", "Play: Waiting for response");
-            let mut reader = BufReader::new(stream);
-            let mut line = String::new();
-            reader.read_line(&mut line).await?;
-            return Ok(serde_json::from_str(&line)?)
-        }
-        Err(error.unwrap())
+        // Wait for response.
+        debug!(target: "agent", "Play: Waiting for response");
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader.read_line(&mut line).await?;
+        Ok(serde_json::from_str(&line)?)
     }
 }
 
@@ -240,7 +225,9 @@ pub struct AgentArgs {
 
 /// Start agent, print port on stdout, enter agent main loop, never return.
 pub async fn agent(args: &AgentArgs) {
-    let mut agent = Agent::try_new(args.value).expect("Could not start agent");
+    let mut agent = Agent::try_new(args.value)
+        .await
+        .expect("Could not start agent");
     print!("{}\n", agent.socket().port());
     agent.exec().await;
 }

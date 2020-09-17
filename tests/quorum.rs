@@ -9,7 +9,6 @@ use liars::playexpert::PlayExpertArgs;
 use liars::start::*;
 
 struct ProcessCleanup {
-    conf: liars::conf::Conf,
     processes: Vec<tokio::process::Child>,
 }
 impl Drop for ProcessCleanup {
@@ -29,7 +28,7 @@ fn test() {
 
 /// Test with a full quorum.
 async fn test_impl() {
-    for i in 0..1000 {
+    for i in 0..100 {
         eprintln!("Initializing test {}", i);
 
         // Start with processes.
@@ -45,33 +44,45 @@ async fn test_impl() {
         };
         // Cleanup processes on exit.
         let (conf, processes) = start(&start_args).await;
-        let _guard = ProcessCleanup { conf, processes };
+        let _guard = ProcessCleanup { processes };
         assert_eq!(_guard.processes.len(), num_agents);
 
-        /*
+        // Alternate play and expert runs in a random order, as a stress test.
+        let mut play_runs = 0;
+        let mut expert_runs = 0;
+        while play_runs < 5 || expert_runs < 5 {
+            if rand::thread_rng().gen_bool(0.5) {
+                play_runs += 1;
                 // Test that `play` provides the right result.
                 eprintln!("...Testing play in this configuration");
                 let play_args = PlayArgs {
                     path: std::path::PathBuf::from("agents.conf"),
                 };
                 let result = liars::play::play(&play_args).await;
-                assert_eq!(result.expect("We should have a result"), value, "'play' should produce the right value");
-        */
-        // Test that `playexpert` provides the right result.
-        eprintln!("...Testing playexpert in this configuration");
-        let play_expert_args = PlayExpertArgs {
-            path: std::path::PathBuf::from("agents.conf"),
-            liar_ratio,
-        };
-        let result = liars::playexpert::play(&play_expert_args).await;
-        assert_eq!(
-            result.expect("We should have a result"),
-            value,
-            "'playexpert' should produce the right value"
-        );
+                assert_eq!(
+                    result.expect("We should have a result"),
+                    value,
+                    "'play' should produce the right value"
+                );
+            } else {
+                expert_runs += 1;
+                // Test that `playexpert` provides the right result.
+                eprintln!("...Testing playexpert in this configuration");
+                let play_expert_args = PlayExpertArgs {
+                    path: std::path::PathBuf::from("agents.conf"),
+                    liar_ratio,
+                };
+                let result = liars::playexpert::play(&play_expert_args).await;
+                assert_eq!(
+                    result.expect("We should have a result"),
+                    value,
+                    "'playexpert' should produce the right value"
+                );
+            }
+        }
 
-        // Close sockets
-        for child in &_guard.conf.children {
+        // Try to close sockets
+        for child in &conf.children {
             let remote = liars::agent::RemoteAgent::new(child.clone());
             let _ = remote.call(&liars::agent::Message::Stop).await;
         }
