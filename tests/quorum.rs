@@ -1,3 +1,8 @@
+#![feature(refcell_take)]
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
 extern crate liars;
 extern crate rand;
 extern crate tokio_test;
@@ -9,12 +14,13 @@ use liars::playexpert::PlayExpertArgs;
 use liars::start::*;
 
 struct ProcessCleanup {
-    processes: Vec<tokio::process::Child>,
+    processes: Vec<Rc<RefCell<Option<tokio::process::Child>>>>,
 }
 impl Drop for ProcessCleanup {
     fn drop(&mut self) {
         for child in &mut self.processes {
-            let _ = child.kill().unwrap();
+            let mut borrow = child.borrow_mut();
+            let _ = borrow.as_mut().unwrap().kill().unwrap();
         }
         let _ = std::fs::remove_file("agents.conf");
     }
@@ -28,7 +34,7 @@ fn test() {
 
 /// Test with a full quorum.
 async fn test_impl() {
-    for i in 0..100 {
+    for i in 0i32..100 {
         eprintln!("Initializing test {}", i);
 
         // Start with processes.
@@ -44,7 +50,13 @@ async fn test_impl() {
         };
         // Cleanup processes on exit.
         let (conf, processes) = start(&start_args).await;
-        let _guard = ProcessCleanup { processes };
+        let processes: Vec<_> = processes
+            .into_iter()
+            .map(|c| Rc::new(RefCell::new(Some(c))))
+            .collect();
+        let _guard = ProcessCleanup {
+            processes: processes.clone(),
+        };
         assert_eq!(_guard.processes.len(), num_agents);
 
         // Alternate play and expert runs in a random order, as a stress test.
@@ -85,6 +97,16 @@ async fn test_impl() {
         for child in &conf.children {
             let remote = liars::agent::RemoteAgent::new(child.clone());
             let _ = remote.call(&liars::agent::Message::Stop).await;
+        }
+
+        // Wait until processes are dead to continue.
+        drop(_guard);
+        for process in processes {
+            std::cell::RefCell::take(process.as_ref())
+                .unwrap()
+                .wait_with_output()
+                .await
+                .expect("Could not wait_with_output process");
         }
     }
 }

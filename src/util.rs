@@ -9,8 +9,7 @@ async fn sleep(hint: u64) {
         hint * hint as u64,
         rand::thread_rng().gen_range(0, 1_000_000_000),
     );
-    tokio::time::delay_for(delay)
-        .await;
+    tokio::time::delay_for(delay).await;
 }
 
 pub async fn retry_future_if<F, G, T, E, P>(mut f: F, should_try_again: G) -> Result<T, E>

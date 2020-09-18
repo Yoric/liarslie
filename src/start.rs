@@ -46,12 +46,7 @@ pub async fn start(args: &StartArgs) -> (Conf, Vec<tokio::process::Child>) {
             .stdout(std::process::Stdio::piped());
 
         // We may need several attempts to spawn processes, if the machine is a bit stressed.
-        let child = util::retry_closure_if(
-            move || cmd.spawn(),
-            |err| err.kind() == std::io::ErrorKind::WouldBlock,
-        )
-        .await
-        .expect("Could not spawn process");
+        let child = cmd.spawn().expect("Could not spawn process");
         processes.push(child);
     }
 
